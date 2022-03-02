@@ -1,5 +1,6 @@
 package http;
 
+import catalina.Context;
 import lombok.Getter;
 
 import java.time.Instant;
@@ -24,9 +25,9 @@ public class HttpSession {
     private Instant lastAccessed;
 
     @Getter
-//    private final Context context;
+    private final Context context;
 
-    public HttpSession(String id,Context context) {
+    public HttpSession(String id, Context context) {
         this.id = id;
         this.context = context;
         this.attributes = new ConcurrentHashMap<>();

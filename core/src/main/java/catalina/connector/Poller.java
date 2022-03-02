@@ -11,6 +11,8 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.SynchronousQueue;
 
 /**
@@ -27,12 +29,21 @@ public class Poller implements Runnable {
     private CoyoteAdapter coyoteAdapter;
 
     private Map<SocketChannel, Http11NioProcessor> nioProcessorMap;
-    private Map<SocketChannel, SocketProcessor> processorMap;
+    private Map<SocketChannel, SocketProcessor> socketProcessorMap;
 
     // poller封装了nio里的Selector
     private Selector selector;
-    private SynchronousQueue<PollerEvent> events;
+    private Queue<PollerEvent> events;
 
+    public Poller(String name, Endpoint endpoint, Map<SocketChannel, Http11NioProcessor> nioProcessorMap, Map<SocketChannel, SocketProcessor> socketProcessorMap) throws IOException {
+        this.name = name;
+        this.endpoint = endpoint;
+        this.nioProcessorMap = nioProcessorMap;
+        this.socketProcessorMap = socketProcessorMap;
+
+        this.selector = Selector.open();
+        this.events = new ConcurrentLinkedQueue<>();
+    }
 
     @Override
     public void run() {
@@ -92,9 +103,9 @@ public class Poller implements Runnable {
             socketProcessor = new SocketProcessor(endpoint, client, this, isNewSocket);
             Http11NioProcessor http11NioProcessor = new Http11NioProcessor(socketProcessor, coyoteAdapter);
             nioProcessorMap.put(client, http11NioProcessor);
-            processorMap.put(client, socketProcessor);
+            socketProcessorMap.put(client, socketProcessor);
         } else {
-            socketProcessor = processorMap.get(client);
+            socketProcessor = socketProcessorMap.get(client);
         }
         // 加入到PollerEvent队列中
         events.offer(new PollerEvent(socketProcessor));
@@ -115,6 +126,14 @@ public class Poller implements Runnable {
                 log.error("Socket{} 已经被关闭，无法注册到 Poller", socketProcessor.getSocketChannel());
             }
         }
+    }
+
+    public void close() throws IOException {
+        for (SocketProcessor socketProcessor : socketProcessorMap.values()) {
+            socketProcessor.close();
+        }
+        events.clear();
+        selector.close();
     }
 
 

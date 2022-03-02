@@ -1,15 +1,19 @@
 package catalina.connector;
 
-import lombok.AllArgsConstructor;
+
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executor;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static util.Constant.POLLER_THREAD_COUNT;
 
 /**
  * @Autuor: innthehell
@@ -23,77 +27,123 @@ public class Endpoint {
 
     private Http11NioProtocol parent;
 
-    // 请求处理线程池
+    /**请求处理线程池**/
     private Executor executor;
-
-    // 监听线程，只有一个acceptor线程
+    /**
+     * 负责接收 Socket 线程
+     */
     private Acceptor acceptor;
 
-    // poller list，多个poller线程
     private List<Poller> pollerList;
 
     private volatile boolean isRunning;
+    // 封装了ServerSocketChannel
+    private ServerSocketChannel socketChannel;
 
-    private ServerSocketChannel serverSocketChannel;
-
-    // Poller轮询指针
+    /**
+     * Poller 轮询指针
+     */
     private AtomicInteger pollerIndex = new AtomicInteger(0);
 
+    private Map<SocketChannel, SocketProcessor> socketProcessorMap;
+    private Map<SocketChannel, Http11NioProcessor> nioProcessorMap;
 
-    public SocketChannel accept() throws IOException {
-        return serverSocketChannel.accept();
+    public Endpoint(Http11NioProtocol parent, Map<SocketChannel, SocketProcessor> socketProcessorMap, Map<SocketChannel, Http11NioProcessor> nioProcessorMap) {
+        this.parent = parent;
+        this.socketProcessorMap = socketProcessorMap;
+        this.nioProcessorMap = nioProcessorMap;
     }
 
+    public Http11ConnectionHandler getConnectionHandler() {
+        return parent.getConnectionHandler();
+    }
+
+    public Connector getConnector() {
+        return parent.getConnector();
+    }
+
+    public CoyoteAdapter getCoyoteAdapter() {
+        return getConnector().getCoyoteAdapter();
+    }
+
+    private void init() throws IOException {
+        this.executor = new Executor();
+
+        this.socketChannel = ServerSocketChannel.open();
+        this.socketChannel.bind(new InetSocketAddress(getConnector().getPort()));
+        this.socketChannel.configureBlocking(true);
+
+        this.pollerList = new ArrayList<>(POLLER_THREAD_COUNT);
+        for (int i = 0; i < POLLER_THREAD_COUNT; i++) {
+            String pollerName = "Poller-" + i;
+            Poller poller = new Poller(pollerName, this, nioProcessorMap, socketProcessorMap);
+            Thread thread = new Thread(poller, pollerName);
+            thread.setDaemon(true);
+            thread.start();
+            pollerList.add(poller);
+        }
+
+        this.acceptor = new Acceptor(this);
+        Thread acceptor = new Thread(this.acceptor, "Acceptor");
+        acceptor.setDaemon(true);
+        acceptor.start();
+    }
+
+    public void execute(SocketProcessor processor) {
+        executor.execute(processor);
+    }
+
+    public void start() throws IOException {
+        this.isRunning = true;
+        init();
+    }
+
+    public void shutdown() {
+        isRunning = false;
+        for (Poller poller : pollerList) {
+            try {
+                poller.close();
+            } catch (IOException e) {
+                log.error("{} 关闭失败",poller);
+                e.printStackTrace();
+            }
+        }
+        executor.shutdown();
+        try {
+            socketChannel.close();
+        } catch (IOException e) {
+            log.error("{} 关闭失败",socketChannel);
+            e.printStackTrace();
+        }
+    }
+
+    public SocketChannel accept() throws IOException {
+        return socketChannel.accept();
+    }
 
     public void registerToPoller(SocketChannel client) throws IOException {
-        serverSocketChannel.configureBlocking(false);
+        socketChannel.configureBlocking(false);
         getPoller().register(client, true);
-        serverSocketChannel.configureBlocking(true);
+        socketChannel.configureBlocking(true);
     }
 
     /**
-     * 采用轮询的方式，遍历PollerList中的每一个Poller
-     * @return
+     * 轮询 Poller
+     *
+     * @return Poller
      */
     private Poller getPoller() {
         int index = Math.abs(pollerIndex.incrementAndGet()) % pollerList.size();
         return pollerList.get(index);
     }
 
-
-//    public boolean setSocketOptions(SocketChannel socket) {
-//        try {
-//            NioSocketWrapper socketWrapper = null;
-//            NioSocketWrapper newWrapper = new NioSocketWrapper(this, socket);
-//
-//            socketWrapper = newWrapper;
-//
-//            socket.configureBlocking(false);
-//            // 将socketWrapper注册到Poller中
-//            getPoller().register();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//
-//        return false;
-//    }
-
-//    @AllArgsConstructor
-//    public class NioSocketWrapper {
-////        private final Poller poller;
-//        private final Endpoint endpoint;
-//        private final SocketChannel channel;
-//
-//
-//
-//    }
-
-    public void execute(SocketProcessor processor) {
-        executor.execute(processor);
+    public Long getConnectionTimeout() {
+        return getConnector().getConnectionTimeout();
     }
 
-    public Http11ConnectionHandler getConnectionHandler() {
-        return parent.getConnectionHandler();
+    @Override
+    public String toString() {
+        return "Endpoint{}";
     }
 
 }

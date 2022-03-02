@@ -1,5 +1,6 @@
 package catalina;
 
+import exception.ServletException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
@@ -33,7 +34,7 @@ public class Host {
         }
     }
 
-    public void shutdown()  { // throws ServletException
+    public void shutdown() throws ServletException { // throws ServletException
         for (Context context : contextMap.values()) {
             context.destroy();
         }

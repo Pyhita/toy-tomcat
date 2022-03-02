@@ -1,5 +1,7 @@
 package catalina.connector;
 
+import http.Request;
+import http.Response;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -54,7 +56,7 @@ public class Http11NioProcessor {
 
             log.info(request.toString());
             // 将解析好的request和response分发给对应的容器进行处理
-            //
+            // 通过coyoteAdapter发送给合适的容器处理
             isFinished = true;
         } catch (Exception e) {
             System.out.println(e.getMessage());

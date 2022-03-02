@@ -3,10 +3,16 @@ package catalina.connector;
 import catalina.Context;
 import catalina.Host;
 import catalina.ServletWrapper;
+import filter.Filter;
+import filter.StandardFilterChain;
 import http.Request;
 import http.Response;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.extern.slf4j.Slf4j;
 import util.HttpStatus;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -15,6 +21,9 @@ import java.util.Map;
  * @Description: catalina.connector
  * @Version: 1.0
  */
+@Data
+@Slf4j
+@AllArgsConstructor
 public class CoyoteAdapter {
     private Connector connector;
 
@@ -50,6 +59,13 @@ public class CoyoteAdapter {
             // 消除掉uri中的path，得到servlet映射路径
             if (!"/".equals(context.getPath())) {
                 urlPattern = urlPattern.replaceFirst(context.getPath(), "");
+            }
+
+            // 调用filterchain
+            List<Filter> filters = context.getMatchFilters(urlPattern);
+            if (!filters.isEmpty()) {
+                StandardFilterChain filterChain = new StandardFilterChain(filters);
+                filterChain.doFilter(request, response);
             }
 
             // 找到相应的servlet

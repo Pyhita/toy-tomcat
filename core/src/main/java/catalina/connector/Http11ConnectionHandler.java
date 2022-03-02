@@ -3,6 +3,7 @@ package catalina.connector;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.IOException;
 import java.nio.channels.SocketChannel;
 import java.util.Map;
 
@@ -28,8 +29,41 @@ public class Http11ConnectionHandler implements Runnable {
         nioProcessor.process();
     }
 
+
+    private synchronized void cleanTimeoutSockets() {
+        for (Map.Entry<SocketChannel, SocketProcessor> entry : socketProcessorMap.entrySet()) {
+            try {
+                SocketChannel channel = entry.getKey();
+                SocketProcessor processor = entry.getValue();
+                if (!channel.isConnected()) {
+                    log.debug(channel + "关闭连接");
+                    socketProcessorMap.remove(channel);
+                    nioProcessorMap.remove(channel);
+                    continue;
+                }
+                if (processor.isWorking()) {
+                    continue;
+                }
+                if (processor.isTimeout()) {
+                    log.debug("{} KeepAlive 已过期", channel);
+                    processor.close();
+                    socketProcessorMap.remove(channel);
+                    nioProcessorMap.remove(channel);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public void closeALL() throws IOException {
+        for (SocketProcessor processor : socketProcessorMap.values()) {
+            processor.close();
+        }
+    }
+
     @Override
     public void run() {
-
+        cleanTimeoutSockets();
     }
 }

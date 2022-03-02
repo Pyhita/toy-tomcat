@@ -1,5 +1,6 @@
 package catalina;
 
+import exception.ServletException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
@@ -27,13 +28,13 @@ public class Engine {
 
     public void start() throws Exception {
         for (Host host : hosts) {
-//            host.start();
+            host.start();
         }
     }
 
-    public void shutdown() {
+    public void shutdown() throws ServletException {
         for (Host host : hosts) {
-//            host.shutdown();
+            host.shutdown();
         }
     }
 
